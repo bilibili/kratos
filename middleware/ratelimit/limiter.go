@@ -5,9 +5,18 @@ import (
 
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/middleware"
+	"github.com/go-kratos/sra/ratelimit/bbr"
 )
 
 type Option func(*options)
+
+// WithLimiter set Limiter implementation,
+// default bbr limiter
+func WithLimiter(limiter Limiter) Option {
+	return func(o *options) {
+		o.limiter = limiter
+	}
+}
 
 // WithErrorCode set error code when limiter triggered,
 // default error code 429
@@ -30,6 +39,7 @@ func WithErrorMessage(message string) Option {
 }
 
 type options struct {
+	limiter    Limiter
 	errCode    int
 	errReason  string
 	errMessage string
@@ -41,8 +51,9 @@ type Limiter interface {
 }
 
 // RateLimiter middleware
-func RateLimiter(limiter Limiter, opts ...Option) middleware.Middleware {
+func RateLimiter(opts ...Option) middleware.Middleware {
 	options := &options{
+		limiter:    bbr.NewLimiter(),
 		errCode:    429,
 		errReason:  "rate limit exceeded",
 		errMessage: "service unavailable due to rate limit exceeded",
@@ -56,7 +67,7 @@ func RateLimiter(limiter Limiter, opts ...Option) middleware.Middleware {
 	errLimitExceed := errors.New(options.errCode, options.errReason, options.errMessage)
 	return func(handler middleware.Handler) middleware.Handler {
 		return func(ctx context.Context, req interface{}) (reply interface{}, err error) {
-			done, e := limiter.Allow(ctx)
+			done, e := options.limiter.Allow(ctx)
 			if e != nil {
 				// blocked
 				return nil, errLimitExceed
